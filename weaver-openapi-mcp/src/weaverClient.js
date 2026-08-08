@@ -112,7 +112,8 @@ export async function resolveWeaverUser({ acessToken, email, mobile, jobNum }) {
     if (!jobNum && email && String(row.email).toLowerCase() !== String(email).toLowerCase()) return false;
     if (!jobNum && !email && mobile && String(row.mobile) !== String(mobile)) return false;
     return true;
-  }) || rows[0];
+  });
+  if (!match) throw new Error('通讯录查询结果与当前登录用户不匹配，已拒绝绑定');
 
   return {
     userid: String(match.user_id ?? match.userid ?? ''),

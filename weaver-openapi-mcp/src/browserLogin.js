@@ -51,12 +51,13 @@ export async function startBrowserLogin({ timeoutMs = config.loginTimeoutMs, ope
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, config.callbackHost, resolve);
+    server.listen(config.callbackPort || 0, config.callbackHost, resolve);
   });
 
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
-  const callbackUrl = `http://127.0.0.1:${port}${callbackPath}`;
+  if (!port) throw new Error('无法获取本地回调端口，请检查 WEAVER_CALLBACK_HOST/WEAVER_CALLBACK_PORT 配置');
+  const callbackUrl = `http://${config.callbackPublicHost}:${port}${callbackPath}`;
   const params = new URLSearchParams({ app_key: config.appKey, redirect_uri: callbackUrl });
   const authUrl = `${config.origin}/api/bs/open/auth/third?${params.toString()}`;
 

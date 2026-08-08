@@ -31,6 +31,8 @@
 | `WEAVER_BINDINGS_FILE` | 可选，宿主用户到泛微账号的预绑定文件 |
 | `WEAVER_SESSIONS_FILE` | 可选，会话文件路径，默认 `data/sessions.json` |
 | `WEAVER_CALLBACK_HOST` | 可选，本地回调监听地址，默认 `127.0.0.1` |
+| `WEAVER_CALLBACK_PUBLIC_HOST` | 可选，回调地址对外使用的域名/IP，默认同 `WEAVER_CALLBACK_HOST`；`0.0.0.0` 时会自动回退为 `127.0.0.1` |
+| `WEAVER_CALLBACK_PORT` | 可选，本地回调固定端口，默认 `0`（随机端口）；泛微开放平台需要登记 redirect_uri 白名单时使用 |
 | `WEAVER_LOGIN_TIMEOUT_MS` | 可选，浏览器登录等待毫秒数，默认 `300000` |
 | `WEAVER_IDENTITY_PARAM` | 可选，自动注入的身份参数名，默认 `userid` |
 | `WEAVER_AUTO_INJECT_USERID` | 设为 `false` 时不自动注入身份参数，但仍会拒绝不匹配的身份参数 |
@@ -48,6 +50,8 @@
 ```
 
 如果设置了预绑定，浏览器登录的泛微账号必须与预绑定至少匹配一项，否则登录会被拒绝。
+
+也可以把配置写到项目根目录的 `.env`（该文件已被 gitignore，不会提交），启动时会自动加载；已通过宿主注入的环境变量优先。
 
 ## 工具
 
@@ -93,6 +97,29 @@ WEAVER_CORP_ID = ""
 WEAVER_USER_KEY = ""
 WEAVER_REQUIRE_BINDING = "false"
 ```
+
+## WorkBuddy 接入
+
+WorkBuddy 的 MCP 配置是用户级或项目级的静态 JSON，`env` 不会自动携带“当前 WorkBuddy 用户”。要把 WorkBuddy 用户和泛微账号绑定，每个用户需要在自己的配置里使用独立的 `WEAVER_USER_KEY`。用户级配置路径为 `~/.workbuddy/mcp.json`，也可以在 WorkBuddy 的 MCP 配置界面中填写相同内容：
+
+```json
+{
+  "mcpServers": {
+    "weaver_openapi": {
+      "command": "cmd",
+      "args": ["/c", "node", "D:\\codex项目\\weaver-openapi-mcp\\src\\index.js"],
+      "env": {
+        "WEAVER_API_BASE": "https://zdyl.zhende.com:11112/papi/openapi",
+        "WEAVER_APP_KEY": "PASTE_YOUR_APP_KEY",
+        "WEAVER_USER_KEY": "workbuddy_user_001",
+        "WEAVER_REQUIRE_BINDING": "true"
+      }
+    }
+  }
+}
+```
+
+每个用户的 `WEAVER_USER_KEY` 必须不同。启用 `WEAVER_REQUIRE_BINDING=true` 并在 `bindings.json` 预置“WorkBuddy 用户 → 泛微账号”的映射后，即使用户的默认浏览器里已有其他人的泛微登录态，`weaver_login` 也会因为身份不匹配而拒绝绑定。
 
 ## 注意事项
 

@@ -7,7 +7,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node scripts/test-identity.mjs && node scripts/test-tools.mjs && node scripts/test-login.mjs",
+    "test": "node scripts/test-identity.mjs && node scripts/test-tools.mjs && node scripts/test-login.mjs && node scripts/test-login-e2e.mjs",
     "smoke": "node ../.codex/scripts/mcp-smoke.mjs weaver cmd /c node src/index.js"
   },
   "engines": {

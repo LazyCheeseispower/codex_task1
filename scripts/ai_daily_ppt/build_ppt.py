@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Build a brand-consistent AI daily brief from the Zhende template.
+"""Build the v4 AI daily brief from the Zhende template.
 
-The generator never redraws the template. It reuses the template's own cover,
-global TOC, chapter divider/TOC, content skeleton and back-cover slides, then
-overlays an adaptive card system so every run keeps the same visual language:
-4 items use a 2x2 grid, 3 items use three balanced columns, 2 items use two
-larger cards and 1 item uses a banner card. Every text frame enables PowerPoint
-auto-shrink so long headlines cannot spill out of their card.
+Deck structure is fixed at 15 pages: cover, global TOC, 4 chapters x
+(chapter image page + 2 detailed item pages), back cover.  Each chapter has
+exactly two items.  Chapter pages reuse the template divider and add a large
+brand image plus two preview rows.  Detail pages use the blank content
+skeleton: header, left text panel (summary / key points / impact / source)
+and right AI brand image.  Text frames keep PowerPoint auto-shrink enabled so
+long headlines cannot spill out of their frame.
 """
 
 import argparse
 import copy
 import json
+import os
 import sys
 from io import BytesIO
 
@@ -26,47 +28,20 @@ from pptx.util import Inches, Pt
 
 BRAND_BLUE = RGBColor(0x15, 0x3C, 0x86)
 ACCENT_BLUE = RGBColor(0x29, 0x3F, 0x8E)
+LIGHT_BLUE = RGBColor(0xE8, 0xEF, 0xFA)
 DARK_TEXT = RGBColor(0x22, 0x2B, 0x36)
 BODY_TEXT = RGBColor(0x3A, 0x44, 0x52)
-META_TEXT = RGBColor(0x8A, 0x94, 0xA3)
+META_TEXT = RGBColor(0x7A, 0x85, 0x96)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-CARD_LINE = RGBColor(0xD9, 0xE1, 0xEE)
+CARD_LINE = RGBColor(0xC9, 0xD7, 0xEA)
 LIGHT_LINE = RGBColor(0xE4, 0xEA, 0xF3)
-FONT = "微软雅黑"
+FONT = "Microsoft YaHei"
 
-MAX_ITEMS_PER_CHAPTER = 4
-MAX_CHAPTERS = 6
-
+CHAPTER_COUNT = 4
+ITEMS_PER_CHAPTER = 2
 SLIDE_W = 13.333
 SLIDE_H = 7.5
 MARGIN = 0.76
-GAP = 0.30
-GRID_TOP = 1.55
-GRID_BOTTOM = 6.75
-
-
-TIERS = {
-    "compact": {
-        "title": 14.5, "summary": 10.5, "meta": 9.0, "chip": 10.5,
-        "chip_h": 0.34, "chip_top": 0.22, "title_top": 0.66, "title_h": 0.58,
-        "summary_top": 1.32, "summary_h": 0.40, "meta_bottom": 0.44,
-    },
-    "medium": {
-        "title": 14.0, "summary": 10.5, "meta": 9.0, "chip": 10.5,
-        "chip_h": 0.34, "chip_top": 0.24, "title_top": 0.68, "title_h": 0.68,
-        "summary_top": 1.46, "summary_h": 1.09, "meta_bottom": 0.44,
-    },
-    "large": {
-        "title": 16.0, "summary": 11.5, "meta": 9.5, "chip": 11.0,
-        "chip_h": 0.38, "chip_top": 0.28, "title_top": 0.76, "title_h": 0.76,
-        "summary_top": 1.64, "summary_h": 1.47, "meta_bottom": 0.48,
-    },
-    "banner": {
-        "title": 18.0, "summary": 12.0, "meta": 10.0, "chip": 11.0,
-        "chip_h": 0.40, "chip_top": 0.32, "title_top": 0.88, "title_h": 0.82,
-        "summary_top": 1.88, "summary_h": 0.61, "meta_bottom": 0.50,
-    },
-}
 
 
 def _apply_typeface(rPr, name):
@@ -266,141 +241,152 @@ def add_rounded_rect(slide, name, left, top, width, height, fill=WHITE,
     return shape
 
 
-def add_card(slide, prefix, item_no, item, left, top, width, height, tier):
-    cfg = TIERS[tier]
-    card = add_rounded_rect(slide, prefix, left, top, width, height,
-                            fill=WHITE, line_color=CARD_LINE, radius=0.055)
-    add_rect(slide, prefix + "_accent", left, top + 0.18, 0.08, height - 0.36, BRAND_BLUE)
-
-    chip = add_rounded_rect(
-        slide, prefix + "_chip", left + 0.30, top + cfg["chip_top"],
-        1.30, cfg["chip_h"], fill=BRAND_BLUE, line_color=None, radius=0.5,
-    )
-    add_textbox(
-        slide, prefix + "_chip_text", left + 0.30, top + cfg["chip_top"],
-        1.30, cfg["chip_h"], "要点 %02d" % item_no, cfg["chip"], bold=True,
-        color=WHITE, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE,
-        line_spacing=1.0, auto_size=False,
-    )
-
-    add_textbox(
-        slide, prefix + "_title", left + 0.30, top + cfg["title_top"],
-        width - 0.60, cfg["title_h"], item["title"], cfg["title"], bold=True,
-        color=BRAND_BLUE, anchor=MSO_ANCHOR.TOP, line_spacing=1.05,
-    )
-    add_textbox(
-        slide, prefix + "_summary", left + 0.30, top + cfg["summary_top"],
-        width - 0.60, cfg["summary_h"], item["summary"], cfg["summary"],
-        color=BODY_TEXT, anchor=MSO_ANCHOR.TOP, line_spacing=1.12,
-    )
-    meta_text = "%s · %s" % (item.get("source", ""), item.get("meta", ""))
-    add_textbox(
-        slide, prefix + "_meta", left + 0.30, top + height - cfg["meta_bottom"] - 0.28,
-        width - 0.60, 0.28, meta_text, cfg["meta"], color=META_TEXT,
-        anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.0,
-    )
-    return card
+def add_image(slide, name, image_path, left, top, width=None, height=None):
+    if width is not None and height is not None:
+        pic = slide.shapes.add_picture(
+            image_path, Inches(left), Inches(top), Inches(width), Inches(height)
+        )
+    else:
+        pic = slide.shapes.add_picture(image_path, Inches(left), Inches(top))
+    pic.name = name
+    return pic
 
 
-def add_content_header(slide, date_text, chapter_title, page_no, page_total):
+def add_header(slide, date_text, chapter_title, page_no, page_total):
     kicker = "AI 动态日报 · %s · 第 %d 页 / 共 %d 页" % (date_text, page_no, page_total)
     add_textbox(slide, "page_kicker", MARGIN, 0.38, 10.6, 0.30, kicker, 10,
                 color=META_TEXT, line_spacing=1.0)
-    add_textbox(slide, "page_title", MARGIN, 0.70, 9.0, 0.56, chapter_title, 26,
+    add_textbox(slide, "page_title", MARGIN, 0.70, 9.4, 0.56, chapter_title, 26,
                 bold=True, color=BRAND_BLUE, line_spacing=1.0)
     add_rect(slide, "accent", MARGIN + 0.02, 1.34, 1.10, 0.07, ACCENT_BLUE)
     add_rect(slide, "page_rule", MARGIN, 1.52, SLIDE_W - 2 * MARGIN, 0.012, LIGHT_LINE)
 
 
-def add_content_page(prs, content_source, date_text, chapter_no, chapter, page_no,
-                     page_total, chunk, global_card_start):
-    slide = duplicate_slide(prs, content_source)
-    add_content_header(slide, date_text, chapter["title"], page_no, page_total)
+def resolve_image(base_dir, path):
+    if os.path.isabs(path):
+        return path
+    return os.path.join(base_dir, path)
 
-    n = len(chunk)
-    area_h = GRID_BOTTOM - GRID_TOP
-    if n == 4:
-        tier = "compact"
-        card_w = (SLIDE_W - 2 * MARGIN - GAP) / 2
-        card_h = (area_h - GAP) / 2
-        top = GRID_TOP
-        positions = [
-            (MARGIN + col * (card_w + GAP), top + row * (card_h + GAP))
-            for row in range(2) for col in range(2)
-        ]
-    elif n == 3:
-        tier = "medium"
-        card_w = (SLIDE_W - 2 * MARGIN - 2 * GAP) / 3
-        card_h = 3.35
-        top = GRID_TOP + (area_h - card_h) / 2
-        positions = [(MARGIN + col * (card_w + GAP), top) for col in range(3)]
-    elif n == 2:
-        tier = "large"
-        card_w = (SLIDE_W - 2 * MARGIN - GAP) / 2
-        card_h = 3.95
-        top = GRID_TOP + (area_h - card_h) / 2
-        positions = [(MARGIN + col * (card_w + GAP), top) for col in range(2)]
-    else:
-        tier = "banner"
-        card_w = SLIDE_W - 2 * MARGIN
-        card_h = 3.35
-        top = GRID_TOP + (area_h - card_h) / 2
-        positions = [(MARGIN, top)]
 
-    for idx, (left, top) in enumerate(positions):
-        prefix = "card_%04d" % (global_card_start + idx)
-        add_card(slide, prefix, idx + 1, chunk[idx], left, top, card_w, card_h, tier)
+def add_chapter_page(prs, divider_src, chapter_no, chapter, base_dir, page_no, page_total):
+    slide = duplicate_slide(prs, divider_src)
+    for name in ("TextBox 1", "TextBox 5"):
+        sh = find_shape(slide, name)
+        if sh is not None:
+            sh._element.getparent().remove(sh._element)
+
+    chapter_image = resolve_image(base_dir, chapter["image"])
+    add_image(slide, "chapter_image", chapter_image, 0.72, 0.62, 5.95, 3.35)
+    add_rect(slide, "chapter_image_frame", 0.72, 0.62, 5.95, 3.35, WHITE, line=True)
+
+    chip = add_rounded_rect(slide, "chapter_chip", 7.02, 0.76, 1.30, 0.42,
+                            fill=BRAND_BLUE, line_color=None, radius=0.5)
+    add_textbox(slide, "chapter_chip_text", 7.02, 0.76, 1.30, 0.42,
+                "第 %d 章" % chapter_no, 11, bold=True, color=WHITE,
+                align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.0,
+                auto_size=False)
+
+    title_box = find_shape(slide, "TextBox 4")
+    title_box.left = Inches(8.42)
+    title_box.top = Inches(0.72)
+    title_box.width = Inches(4.22)
+    title_box.height = Inches(0.52)
+    set_existing_text(title_box, chapter["title"], size=21, bold=False,
+                      color=DARK_TEXT, name=FONT, anchor=MSO_ANCHOR.MIDDLE)
+
+    statement_box = find_shape(slide, "TextBox 6")
+    statement_box.left = Inches(7.02)
+    statement_box.top = Inches(1.38)
+    statement_box.width = Inches(5.62)
+    statement_box.height = Inches(1.12)
+    set_existing_text(statement_box, chapter["statement"], size=15, bold=False,
+                      color=BODY_TEXT, name=FONT, anchor=MSO_ANCHOR.TOP,
+                      line_spacing=1.2)
+
+    add_textbox(slide, "chapter_preview_label", 0.72, 4.28, 2.6, 0.32,
+                "本章精选 · 2 条", 12, bold=True, color=ACCENT_BLUE, line_spacing=1.0)
+    add_rect(slide, "chapter_preview_rule", 0.72, 4.68, 11.85, 0.012, LIGHT_LINE)
+
+    preview_left = 0.72
+    preview_top = 4.88
+    preview_w = 5.90
+    preview_h = 0.92
+    for idx, item in enumerate(chapter["items"]):
+        left = preview_left + idx * (preview_w + 0.05)
+        prefix = "chapter_preview_%d" % (idx + 1)
+        add_rounded_rect(slide, prefix, left, preview_top, preview_w, preview_h,
+                         fill=WHITE, line_color=CARD_LINE, radius=0.10)
+        badge = add_rounded_rect(
+            slide, prefix + "_badge", left + 0.16, preview_top + 0.20,
+            0.52, 0.52, fill=ACCENT_BLUE, line_color=None, radius=0.14,
+        )
+        add_textbox(slide, prefix + "_badge_text", left + 0.16, preview_top + 0.20,
+                    0.52, 0.52, "%02d" % (chapter_no * 10 + idx + 1), 12, bold=True,
+                    color=WHITE, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE,
+                    line_spacing=1.0, auto_size=False)
+        add_textbox(slide, prefix + "_title", left + 0.86, preview_top + 0.06,
+                    preview_w - 1.05, 0.42, item["title"], 15, bold=True,
+                    color=DARK_TEXT, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.05)
+        add_textbox(slide, prefix + "_summary", left + 0.86, preview_top + 0.50,
+                    preview_w - 1.05, 0.36, item["summary"], 10.5, color=META_TEXT,
+                    anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.0)
+
+    add_textbox(slide, "chapter_page_footer", 0.72, 6.92, 8.0, 0.30,
+                "第 %02d 章 · 第 %d 页 / 共 %d 页" % (chapter_no, page_no, page_total),
+                9, color=META_TEXT, line_spacing=1.0)
     return slide
 
 
-def add_agenda_cards(toc, chapter):
-    items = chapter["items"][:MAX_ITEMS_PER_CHAPTER]
-    n = len(items)
-    left0 = 0.95
-    total_w = 12.40 - left0
-    positions = []
-    if n == 4:
-        gap = 0.24
-        w = (total_w - gap) / 2
-        h = 0.98
-        tops = [4.48, 5.56]
-        xs = [left0, left0 + w + gap]
-        positions = [(x, y, w, h) for y in tops for x in xs]
-    elif n == 3:
-        gap = 0.14
-        w = total_w
-        h = 0.72
-        positions = [(left0, 4.42 + i * (h + gap), w, h) for i in range(3)]
-    elif n == 2:
-        gap = 0.16
-        w = total_w
-        h = 0.92
-        positions = [(left0, 4.55 + i * (h + gap), w, h) for i in range(2)]
-    else:
-        w = total_w
-        h = 1.20
-        positions = [(left0, 4.80, w, h)]
+def add_detail_page(prs, content_src, date_text, chapter_no, chapter, item_no,
+                    item, page_no, page_total, base_dir):
+    slide = duplicate_slide(prs, content_src)
+    add_header(slide, date_text, chapter["title"], page_no, page_total)
 
-    for idx, (left, top, w, h) in enumerate(positions):
-        item = items[idx]
-        add_rounded_rect(toc, "agenda_%02d" % (idx + 1), left, top, w, h,
-                         fill=WHITE, line_color=CARD_LINE, radius=0.10)
-        badge_h = min(0.46, h - 0.14)
-        badge = add_rounded_rect(
-            toc, "agenda_%02d_badge" % (idx + 1), left + 0.18, top + (h - badge_h) / 2,
-            badge_h, badge_h, fill=BRAND_BLUE, line_color=None, radius=0.16,
-        )
+    chip = add_rounded_rect(slide, "detail_chip", MARGIN, 1.66, 1.05, 0.38,
+                            fill=BRAND_BLUE, line_color=None, radius=0.5)
+    add_textbox(slide, "detail_chip_text", MARGIN, 1.66, 1.05, 0.38,
+                "%02d" % (chapter_no * 10 + item_no), 12, bold=True, color=WHITE,
+                align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.0,
+                auto_size=False)
+
+    add_textbox(slide, "detail_title", 2.06, 1.58, 6.05, 0.62, item["title"], 20,
+                bold=True, color=BRAND_BLUE, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.05)
+    add_rect(slide, "detail_rule", MARGIN, 2.36, 6.95, 0.012, LIGHT_LINE)
+
+    add_textbox(slide, "detail_summary_label", MARGIN, 2.52, 1.2, 0.28,
+                "背景摘要", 11, bold=True, color=ACCENT_BLUE, line_spacing=1.0)
+    add_textbox(slide, "detail_summary", MARGIN, 2.84, 6.90, 1.05, item["summary"],
+                13, color=BODY_TEXT, anchor=MSO_ANCHOR.TOP, line_spacing=1.22)
+
+    add_rect(slide, "detail_kp_bg", MARGIN, 4.02, 6.95, 1.42, LIGHT_BLUE)
+    add_textbox(slide, "detail_kp_label", MARGIN + 0.12, 4.12, 1.5, 0.26,
+                "要点解读", 11, bold=True, color=BRAND_BLUE, line_spacing=1.0)
+    kp_left = MARGIN + 0.12
+    kp_top = 4.46
+    kp_w = 6.70
+    kp_h = 0.23
+    for idx, point in enumerate(item["key_points"]):
         add_textbox(
-            toc, "agenda_%02d_num" % (idx + 1), left + 0.18, top + (h - badge_h) / 2,
-            badge_h, badge_h, "%02d" % (idx + 1), 13, bold=True, color=WHITE,
-            align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.0,
-            auto_size=False,
+            slide, "detail_kp_%d" % (idx + 1), kp_left, kp_top + idx * 0.245,
+            kp_w, kp_h, "%d. %s" % (idx + 1, point), 11.5, color=DARK_TEXT,
+            anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.0,
         )
-        add_textbox(
-            toc, "agenda_%02d_title" % (idx + 1), left + 0.84, top + 0.06,
-            w - 1.02, h - 0.12, item["title"], 16, color=DARK_TEXT,
-            anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.05,
-        )
+
+    add_textbox(slide, "detail_impact_label", MARGIN, 5.62, 1.2, 0.28,
+                "影响判断", 11, bold=True, color=ACCENT_BLUE, line_spacing=1.0)
+    add_textbox(slide, "detail_impact", MARGIN, 5.94, 6.90, 0.92, item["impact"],
+                12.5, color=BODY_TEXT, anchor=MSO_ANCHOR.TOP, line_spacing=1.2)
+    add_textbox(slide, "detail_source", MARGIN, 6.92, 6.90, 0.34,
+                "来源：%s · %s · %s" % (item["source"], item["meta"], item["link"]),
+                9, color=META_TEXT, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.0)
+
+    item_image = resolve_image(base_dir, item["image"])
+    add_image(slide, "detail_image", item_image, 8.06, 1.70, 4.50, 3.375)
+    add_rect(slide, "detail_image_frame", 8.06, 1.70, 4.50, 3.375, WHITE, line=True)
+    add_textbox(slide, "detail_image_caption", 8.06, 5.18, 4.50, 0.30,
+                "AI 品牌配图 · 概念视觉", 9.5, color=META_TEXT,
+                align=PP_ALIGN.CENTER, line_spacing=1.0)
+    return slide
 
 
 def set_cover(cover, meta):
@@ -453,7 +439,7 @@ def set_toc_entry(box, idx, title):
 
 
 def set_global_toc(toc, chapters):
-    boxes = ["TextBox 2", "TextBox 3", "TextBox 4", "TextBox 6", "TextBox 7", "TextBox 8"]
+    boxes = ["TextBox 2", "TextBox 3", "TextBox 4", "TextBox 6"]
     for idx, chapter in enumerate(chapters):
         box = find_shape(toc, boxes[idx])
         box.left = Inches(4.72)
@@ -465,59 +451,20 @@ def set_global_toc(toc, chapters):
         sh = find_shape(toc, name)
         if sh is not None:
             sh._element.getparent().remove(sh._element)
-
-
-def set_divider(divider, chapter_no, chapter):
-    number_box = find_shape(divider, "TextBox 1")
-    if number_box is None:
-        number_box = find_shape(divider, "TextBox 5")
-    set_existing_text(number_box, "%02d" % chapter_no, size=64, bold=True,
-                      color=ACCENT_BLUE, name=FONT, anchor=MSO_ANCHOR.MIDDLE)
-    title_box = find_shape(divider, "TextBox 4")
-    title_box.left = Inches(8.35)
-    title_box.top = Inches(3.95)
-    title_box.width = Inches(4.85)
-    title_box.height = Inches(0.42)
-    set_existing_text(title_box, chapter["title"], size=20, bold=False,
-                      color=DARK_TEXT, name=FONT, anchor=MSO_ANCHOR.MIDDLE)
-    statement_box = find_shape(divider, "TextBox 6")
-    statement_box.left = Inches(8.35)
-    statement_box.top = Inches(4.48)
-    statement_box.width = Inches(4.85)
-    statement_box.height = Inches(1.40)
-    set_existing_text(statement_box, chapter["statement"], size=20, bold=False,
-                      color=BODY_TEXT, name=FONT, anchor=MSO_ANCHOR.TOP,
-                      line_spacing=1.15)
-
-
-def set_chapter_toc(toc, chapter_no, chapter):
-    number_box = find_shape(toc, "TextBox 17")
-    number_box.top = Inches(2.78)
-    number_box.height = Inches(0.50)
-    set_existing_text(number_box, "%02d" % chapter_no, size=28, bold=True,
-                      color=ACCENT_BLUE, name=FONT, anchor=MSO_ANCHOR.MIDDLE)
-    title_box = find_shape(toc, "TextBox 15")
-    title_box.left = Inches(0.74)
-    title_box.top = Inches(3.30)
-    title_box.width = Inches(8.2)
-    title_box.height = Inches(0.66)
-    set_existing_text(title_box, chapter["title"], size=32, bold=False,
-                      color=DARK_TEXT, name=FONT, anchor=MSO_ANCHOR.MIDDLE)
-    for name in ("TextBox 18", "TextBox 43", "TextBox 44", "TextBox 45"):
+    for name in ("TextBox 7", "TextBox 8"):
         sh = find_shape(toc, name)
         if sh is not None:
             sh._element.getparent().remove(sh._element)
-    add_agenda_cards(toc, chapter)
 
 
-def build(prs, content):
+def build(prs, content, base_dir):
     meta = content["meta"]
     chapters = content["chapters"]
-    if len(chapters) > MAX_CHAPTERS:
-        raise ValueError("最多支持 %d 章" % MAX_CHAPTERS)
+    if len(chapters) != CHAPTER_COUNT:
+        raise ValueError("需要 %d 章，当前 %d 章" % (CHAPTER_COUNT, len(chapters)))
     for chapter in chapters:
-        if not 1 <= len(chapter["items"]) <= MAX_ITEMS_PER_CHAPTER:
-            raise ValueError("每章 1-%d 条：%s" % (MAX_ITEMS_PER_CHAPTER, chapter["title"]))
+        if len(chapter["items"]) != ITEMS_PER_CHAPTER:
+            raise ValueError("每章需要 %d 条：%s" % (ITEMS_PER_CHAPTER, chapter["title"]))
 
     cover_src = find_slide(prs, lambda s: find_shape(s, "表格 7") is not None, "cover")
     global_toc_src = find_slide(prs, lambda s: find_shape(s, "TextBox 2") is not None, "global toc")
@@ -526,12 +473,6 @@ def build(prs, content):
         lambda s: s.slide_layout.name == "2_Custom Layout" and find_shape(s, "TextBox 1") is not None
         and find_shape(s, "TextBox 4") is not None,
         "divider",
-    )
-    toc_src = find_slide(
-        prs,
-        lambda s: s.slide_layout.name == "2_Custom Layout" and find_shape(s, "TextBox 17") is not None
-        and find_shape(s, "TextBox 15") is not None,
-        "chapter toc",
     )
     content_src = find_slide(
         prs,
@@ -547,22 +488,16 @@ def build(prs, content):
     global_toc = duplicate_slide(prs, global_toc_src)
     set_global_toc(global_toc, chapters)
 
-    global_card = 0
+    page_no = 1
+    page_total = 15
     for chapter_no, chapter in enumerate(chapters, start=1):
-        divider = duplicate_slide(prs, divider_src)
-        set_divider(divider, chapter_no, chapter)
-        toc = duplicate_slide(prs, toc_src)
-        set_chapter_toc(toc, chapter_no, chapter)
-        chunks = [
-            chapter["items"][i:i + MAX_ITEMS_PER_CHAPTER]
-            for i in range(0, len(chapter["items"]), MAX_ITEMS_PER_CHAPTER)
-        ]
-        for page_no, chunk in enumerate(chunks, start=1):
-            add_content_page(
-                prs, content_src, meta["date"], chapter_no, chapter,
-                page_no, len(chunks), chunk, global_card,
-            )
-            global_card += len(chunk)
+        add_chapter_page(prs, divider_src, chapter_no, chapter, base_dir,
+                         page_no, page_total)
+        page_no += 1
+        for item_no, item in enumerate(chapter["items"], start=1):
+            add_detail_page(prs, content_src, meta["date"], chapter_no, chapter,
+                            item_no, item, page_no, page_total, base_dir)
+            page_no += 1
 
     duplicate_slide(prs, back_src)
     drop_original_slides(prs, original_rids)
@@ -573,11 +508,12 @@ def main():
     ap.add_argument("--template", required=True)
     ap.add_argument("--content", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--assets-dir", default=".", help="base dir for relative image paths")
     args = ap.parse_args()
     with open(args.content, encoding="utf-8") as f:
         content = json.load(f)
     prs = Presentation(args.template)
-    build(prs, content)
+    build(prs, content, args.assets_dir)
     prs.save(args.out)
     print("saved %s (%d slides)" % (args.out, len(prs.slides._sldIdLst)))
 

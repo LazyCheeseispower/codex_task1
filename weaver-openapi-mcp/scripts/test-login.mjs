@@ -20,11 +20,20 @@ const fakeE10 = http.createServer((req, res) => {
   res.end();
 });
 
+async function getFreePort() {
+  const probe = http.createServer();
+  await new Promise((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const port = probe.address().port;
+  await new Promise((resolve) => probe.close(resolve));
+  return port;
+}
+
 await new Promise((resolve) => fakeE10.listen(0, '127.0.0.1', resolve));
 const fakePort = fakeE10.address().port;
 
 process.env.WEAVER_API_BASE = `http://127.0.0.1:${fakePort}/papi/openapi`;
 process.env.WEAVER_APP_KEY = 'test-app-key';
+process.env.WEAVER_CALLBACK_PORT = String(await getFreePort());
 
 const { startBrowserLogin } = await import('../src/browserLogin.js');
 
@@ -43,6 +52,7 @@ try {
   });
   assert.equal(result.eteamsToken, 'test-eteams-token');
   assert.ok(result.authUrl.startsWith(`http://127.0.0.1:${fakePort}/api/bs/open/auth/third?`));
+  assert.ok(result.callbackUrl.startsWith(`http://127.0.0.1:${process.env.WEAVER_CALLBACK_PORT}/callback/`));
   console.log('browser login callback test passed');
 } finally {
   fakeE10.closeAllConnections?.();
