@@ -68,6 +68,7 @@
 - 每个 MCP 进程对应一个宿主用户，宿主通过 `WEAVER_USER_KEY` 或 `WORKBUDDY_USER_ID` 注入自己的用户 ID。
 - `weaver_login` 只接受浏览器回调里由泛微返回的 `eteams_token`，MCP 自己解析并绑定身份，不允许 Agent 直接指定 `userid`。
 - 通用接口调用前会检查 `query` 和 `body` 里的 `userid`、`user_id`、`useridList`、`account`、`loginid`、`jobNum`、`jobNumList`、`employeeId`、`email`、`mobile` 等身份字段；只要不是当前绑定用户，直接拒绝。
+- `access_token`、`eteams_token`、`refresh_token`、`app_secret` 等令牌参数不允许由调用方传入，请求令牌统一由 MCP 当前绑定会话提供，避免 Agent 换 token 冒充其他用户。
 - 未配置身份时自动注入当前用户的 `userid`，令牌不会出现在工具结果里。
 - 生产环境建议开启 `WEAVER_REQUIRE_BINDING=true`，并在 `bindings.json` 中预置宿主用户到泛微账号的映射，避免同一台机器上的多个用户串用身份。
 

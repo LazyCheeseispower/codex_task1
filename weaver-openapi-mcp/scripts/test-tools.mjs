@@ -93,6 +93,20 @@ try {
   assert.ok(blocked.isError, 'api request with another userid should be rejected');
   assert.ok(blocked.content[0].text.includes('拒绝调用'), `unexpected error: ${blocked.content[0].text}`);
 
+  const blockedTokenQuery = await send('tools/call', {
+    name: 'weaver_api_request',
+    arguments: { path: '/department/v2/list', query: { access_token: 'stolen-token' } },
+  });
+  assert.ok(blockedTokenQuery.isError, 'api request with caller-supplied access_token should be rejected');
+  assert.ok(blockedTokenQuery.content[0].text.includes('不允许由调用方传入'), `unexpected error: ${blockedTokenQuery.content[0].text}`);
+
+  const blockedTokenBody = await send('tools/call', {
+    name: 'weaver_api_request',
+    arguments: { path: '/department/v2/list', body: { eteams_token: 'stolen-token' } },
+  });
+  assert.ok(blockedTokenBody.isError, 'api request with caller-supplied eteams_token should be rejected');
+  assert.ok(blockedTokenBody.content[0].text.includes('不允许由调用方传入'), `unexpected error: ${blockedTokenBody.content[0].text}`);
+
   console.log('mcp tool tests passed');
 } finally {
   child.kill();
