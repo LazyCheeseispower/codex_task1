@@ -84,7 +84,7 @@ def main():
         std = stat.stddev[0]
         if std < MIN_STD:
             issues.append("%s nearly blank (std=%.1f)" % (label, std))
-        dark_count = sum(1 for px in gray.getdata() if px < 120)
+        dark_count = sum(1 for byte in gray.tobytes() if byte < 120)
         dark_ratio = dark_count / (gray.width * gray.height)
         if dark_ratio < 0.0002:
             issues.append("%s has no readable text pixels" % label)
