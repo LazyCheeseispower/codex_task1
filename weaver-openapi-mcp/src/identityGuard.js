@@ -16,6 +16,15 @@ const IDENTITY_KEYS = new Set([
   'mobile',
 ]);
 
+const AUTH_KEYS = new Set([
+  'access_token',
+  'acess_token',
+  'eteams_token',
+  'refresh_token',
+  'app_secret',
+  'client_secret',
+]);
+
 function scalar(value) {
   return value !== undefined && value !== null && value !== '';
 }
@@ -73,6 +82,33 @@ export function findIdentityConflict(value, session) {
     return null;
   };
   return walk(value, '');
+}
+
+function findKeyConflict(value, keys, label) {
+  const walk = (node, path) => {
+    if (node === null || typeof node !== 'object') return null;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i += 1) {
+        const found = walk(node[i], `${path}[${i}]`);
+        if (found) return found;
+      }
+      return null;
+    }
+    for (const [key, item] of Object.entries(node)) {
+      if (keys.has(key.toLowerCase())) {
+        return `${path}.${key}`;
+      }
+      const found = walk(item, path ? `${path}.${key}` : key);
+      if (found) return found;
+    }
+    return null;
+  };
+  const found = walk(value, '');
+  return found ? `${label} ${found}` : null;
+}
+
+export function findAuthConflict(value) {
+  return findKeyConflict(value, AUTH_KEYS, '拒绝调用：参数');
 }
 
 export function injectIdentity(query, body, session, { param = 'userid', enabled = true } = {}) {

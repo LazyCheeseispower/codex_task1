@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { loadTokens, saveTokens } from './tokenStore.js';
 import { requireActiveSession } from './sessionStore.js';
-import { findIdentityConflict, injectIdentity } from './identityGuard.js';
+import { findAuthConflict, findIdentityConflict, injectIdentity } from './identityGuard.js';
 
 function buildUrl(pathname, params = {}) {
   const url = new URL(config.apiBase + pathname);
@@ -135,14 +135,16 @@ export async function callApi({ pathname, method = 'GET', query = {}, body, host
   if (queryConflict) throw new Error(`拒绝调用：query 参数 ${queryConflict} 不是当前登录用户的身份，禁止使用其他用户权限`);
   const bodyConflict = findIdentityConflict(bodyCopy, session);
   if (bodyConflict) throw new Error(`拒绝调用：body 参数 ${bodyConflict} 不是当前登录用户的身份，禁止使用其他用户权限`);
+  const queryAuthConflict = findAuthConflict(queryCopy);
+  if (queryAuthConflict) throw new Error(`${queryAuthConflict} 不允许由调用方传入，令牌由 MCP 当前绑定会话统一管理`);
+  const bodyAuthConflict = findAuthConflict(bodyCopy);
+  if (bodyAuthConflict) throw new Error(`${bodyAuthConflict} 不允许由调用方传入，令牌由 MCP 当前绑定会话统一管理`);
 
   injectIdentity(queryCopy, bodyCopy, session, {
     param: config.identityParam,
     enabled: config.autoInjectIdentity,
   });
 
-  if (!queryCopy.access_token && !(bodyCopy && bodyCopy.access_token)) {
-    queryCopy.access_token = session.acessToken;
-  }
+  queryCopy.access_token = session.acessToken;
   return apiRequest({ pathname, method, query: queryCopy, body: bodyCopy });
 }
