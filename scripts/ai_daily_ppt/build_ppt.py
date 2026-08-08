@@ -361,7 +361,7 @@ def add_detail_page(prs, content_src, date_text, chapter_no, chapter, item_no,
                 align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.0,
                 auto_size=False)
 
-    add_textbox(slide, "detail_title", 2.06, 1.58, 6.05, 0.62, item["title"], 20,
+    add_textbox(slide, "detail_title", 2.06, 1.58, 5.85, 0.62, item["title"], 20,
                 bold=True, color=BRAND_BLUE, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.05)
     add_rect(slide, "detail_rule", MARGIN, 2.36, 6.95, 0.012, LIGHT_LINE)
 
