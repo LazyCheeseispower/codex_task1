@@ -1,0 +1,20 @@
+{
+  "name": "weaver-openapi-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server for Weaver eteams/E10 Open API",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node scripts/test-identity.mjs && node scripts/test-tools.mjs && node scripts/test-login.mjs",
+    "smoke": "node ../.codex/scripts/mcp-smoke.mjs weaver cmd /c node src/index.js"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
+}

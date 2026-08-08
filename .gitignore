@@ -1,0 +1,10 @@
+# 个人项目记忆与本地 Codex 配置，不纳入版本管理
+.codex/
+AGENTS.md
+
+# 本地生成产物、运行时数据与业务模板，不纳入版本管理
+outputs/
+.playwright-mcp/
+templates/
+__pycache__/
+*.pyc
