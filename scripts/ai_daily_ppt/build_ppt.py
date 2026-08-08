@@ -220,6 +220,18 @@ def add_rect(slide, name, left, top, width, height, color, line=False):
     return shape
 
 
+def add_outline(slide, name, left, top, width, height, line_color=CARD_LINE):
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(height)
+    )
+    shape.name = name
+    shape.fill.background()
+    shape.line.color.rgb = line_color
+    shape.line.width = Pt(1)
+    shape.shadow.inherit = False
+    return shape
+
+
 def add_rounded_rect(slide, name, left, top, width, height, fill=WHITE,
                      line_color=CARD_LINE, radius=0.08):
     shape = slide.shapes.add_shape(
@@ -277,7 +289,7 @@ def add_chapter_page(prs, divider_src, chapter_no, chapter, base_dir, page_no, p
 
     chapter_image = resolve_image(base_dir, chapter["image"])
     add_image(slide, "chapter_image", chapter_image, 0.72, 0.62, 5.95, 3.35)
-    add_rect(slide, "chapter_image_frame", 0.72, 0.62, 5.95, 3.35, WHITE, line=True)
+    add_outline(slide, "chapter_image_frame", 0.72, 0.62, 5.95, 3.35)
 
     chip = add_rounded_rect(slide, "chapter_chip", 7.02, 0.76, 1.30, 0.42,
                             fill=BRAND_BLUE, line_color=None, radius=0.5)
@@ -382,7 +394,7 @@ def add_detail_page(prs, content_src, date_text, chapter_no, chapter, item_no,
 
     item_image = resolve_image(base_dir, item["image"])
     add_image(slide, "detail_image", item_image, 8.06, 1.70, 4.50, 3.375)
-    add_rect(slide, "detail_image_frame", 8.06, 1.70, 4.50, 3.375, WHITE, line=True)
+    add_outline(slide, "detail_image_frame", 8.06, 1.70, 4.50, 3.375)
     add_textbox(slide, "detail_image_caption", 8.06, 5.18, 4.50, 0.30,
                 "AI 品牌配图 · 概念视觉", 9.5, color=META_TEXT,
                 align=PP_ALIGN.CENTER, line_spacing=1.0)
